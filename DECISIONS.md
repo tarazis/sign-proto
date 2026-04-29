@@ -36,6 +36,14 @@ Notes:
 
 ---
 
+## 9. Vercel SPA rewrites for client-side routing
+
+**Date:** 2026-04-29
+**Decision:** Added `client/vercel.json` with a catch-all rewrite rule mapping all paths to `index.html`.
+**Rationale:** react-router-dom uses client-side routing with no server-rendered pages. Direct URL access to non-root paths like `/room/:id` would otherwise return 404 from Vercel's static file server — it looks for a file at that path, finds nothing, and 404s before the app even loads. The rewrite ensures `index.html` always loads first, then React Router reads the URL and renders the correct component. Static assets (`/assets/*`) still resolve correctly because Vercel checks real files before applying rewrites.
+
+---
+
 ## 5. Client-side routing: react-router-dom
 
 **Date:** 2026-04-29
