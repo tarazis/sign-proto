@@ -2,6 +2,11 @@
 
 Real-time WebRTC video chat with AI sign language captioning.
 
+## Live Demo
+
+- Frontend: https://signbridge.vercel.app
+- Backend health check: https://signbridge-api.onrender.com/health
+
 ## Project structure
 
 ```

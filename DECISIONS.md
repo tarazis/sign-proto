@@ -20,6 +20,22 @@
 
 ---
 
+## 4. Deployment configuration
+
+**Date:** 2026-04-27
+**Decision:** Deployed frontend to Vercel and backend to Render. Confirmed end-to-end Socket.IO connection across production hosts.
+
+Environment variables:
+- Render: `CLIENT_URL` = Vercel production URL (CORS allowlist)
+- Vercel: `VITE_SERVER_URL` = Render service URL
+
+Notes:
+- Render free tier sleeps after 15 min idle; first request after sleep takes 30-60s. Acceptable for prototype, would upgrade for production.
+- TypeScript build runs at deploy time on Render (`tsc` → `dist/`), not committed to repo.
+- Used `npm ci` (not `npm install`) on both sides for reproducible builds from `package-lock.json`.
+
+---
+
 ## 3. Monorepo structure
 
 **Date:** 2026-04-27
