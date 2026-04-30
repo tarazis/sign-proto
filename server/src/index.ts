@@ -68,6 +68,11 @@ io.on('connection', (socket) => {
     handleLeave(socket.id, roomId)
   })
 
+  socket.on('signal', ({ to, signal }: { to: string; signal: unknown }) => {
+    if (typeof to !== 'string') return
+    io.to(to).emit('signal', { from: socket.id, signal })
+  })
+
   socket.on('disconnect', () => {
     console.log(`[socket] disconnected: ${socket.id}`)
     // Clean up all rooms this socket was in
