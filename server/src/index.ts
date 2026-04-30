@@ -7,8 +7,22 @@ const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173'
 const PORT = process.env.PORT ?? 3001
 const ROOM_CAPACITY = 2
 
+const originPattern = process.env.CORS_ORIGIN_PATTERN
+  ? new RegExp(process.env.CORS_ORIGIN_PATTERN)
+  : null
+
+function corsOrigin(
+  origin: string | undefined,
+  cb: (err: Error | null, allow?: boolean) => void
+) {
+  const allowed =
+    origin === CLIENT_URL || (!!originPattern && !!origin && originPattern.test(origin))
+  console.log(`[cors] origin="${origin}" CLIENT_URL="${CLIENT_URL}" pattern="${originPattern}" allowed=${allowed}`)
+  cb(null, allowed)
+}
+
 const app = express()
-app.use(cors({ origin: CLIENT_URL }))
+app.use(cors({ origin: corsOrigin }))
 app.use(express.json())
 
 app.get('/health', (_req, res) => {
@@ -17,7 +31,7 @@ app.get('/health', (_req, res) => {
 
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
-  cors: { origin: CLIENT_URL, methods: ['GET', 'POST'] },
+  cors: { origin: corsOrigin, methods: ['GET', 'POST'] },
 })
 
 // roomId -> Set of socketIds
@@ -66,6 +80,11 @@ io.on('connection', (socket) => {
 
   socket.on('leave-room', ({ roomId }: { roomId: string }) => {
     handleLeave(socket.id, roomId)
+  })
+
+  socket.on('signal', ({ to, signal }: { to: string; signal: unknown }) => {
+    if (typeof to !== 'string') return
+    io.to(to).emit('signal', { from: socket.id, signal })
   })
 
   socket.on('disconnect', () => {
