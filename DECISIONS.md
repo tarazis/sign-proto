@@ -76,6 +76,22 @@ Notes:
 
 ---
 
+## 10. WebRTC via simple-peer with signal buffering
+
+**Date:** 2026-04-30
+**Decision:** Use `simple-peer` for WebRTC peer connections, with signals buffered until the peer is ready, and the browser bundle imported explicitly.
+**Rationale:** `simple-peer` wraps the verbose RTCPeerConnection API into a clean event-based interface. Two issues surfaced during implementation: (1) signals arriving before the peer was initialized were dropped, causing connections to stall — fixed by buffering pending signals and flushing them once the peer is created; (2) the default `simple-peer` import resolves to the Node bundle in Vite, which fails in the browser — fixed by importing `simple-peer/simplepeer.min.js` directly. React StrictMode was also removed because it double-invokes effects, causing a second peer to be created and immediately destroyed, which broke the connection lifecycle.
+
+---
+
+## 11. CORS for Vercel preview deployments: regex env var
+
+**Date:** 2026-04-30
+**Decision:** Allow all Vercel preview origins via a `CORS_ORIGIN_PATTERN` regex env var rather than listing specific URLs.
+**Rationale:** Vercel preview URLs change per branch (`sign-proto-git-<branch>-<user>.vercel.app`), so hardcoding individual origins would require a Render dashboard update on every new branch. A regex (`^https://sign-proto[^.]*\.vercel\.app$`) covers all current and future preview URLs in one setting. Comma-separated origins were considered but rejected — they have the same scaling problem. The `CLIENT_URL` env var is kept for exact-match production origin; `CORS_ORIGIN_PATTERN` is additive on top of it.
+
+---
+
 ## 3. Monorepo structure
 
 **Date:** 2026-04-27
