@@ -1,13 +1,10 @@
 import { Buffer } from 'buffer'
 ;(window as any).Buffer = Buffer
 
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// StrictMode disabled: its double-mount disconnects the socket mid-handshake,
+// causing peer-left/peer-joined churn and dropped WebRTC signals.
+createRoot(document.getElementById('root')!).render(<App />)
