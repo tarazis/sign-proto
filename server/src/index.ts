@@ -29,6 +29,21 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
 
+app.get('/turn-credentials', (_req, res) => {
+  const { TURN_URL, TURN_USERNAME, TURN_CREDENTIAL } = process.env
+  const iceServers: Array<{ urls: string; username?: string; credential?: string }> = [
+    { urls: 'stun:stun.l.google.com:19302' },
+  ]
+
+  if (TURN_URL && TURN_USERNAME && TURN_CREDENTIAL) {
+    iceServers.push({ urls: TURN_URL, username: TURN_USERNAME, credential: TURN_CREDENTIAL })
+  } else {
+    console.warn('[turn] TURN_URL/TURN_USERNAME/TURN_CREDENTIAL not all set — returning STUN only')
+  }
+
+  res.json({ iceServers })
+})
+
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
   cors: { origin: corsOrigin, methods: ['GET', 'POST'] },

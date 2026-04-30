@@ -5,7 +5,31 @@ import type { Instance as PeerInstance, SignalData } from 'simple-peer'
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import Peer from 'simple-peer/simplepeer.min.js'
-import { socket } from './socket'
+import { socket, SERVER_URL } from './socket'
+
+let iceServersCache: RTCIceServer[] | null = null
+let iceServersPromise: Promise<RTCIceServer[]> | null = null
+
+const FALLBACK_ICE: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
+
+function getIceServers(): Promise<RTCIceServer[]> {
+  if (iceServersCache) return Promise.resolve(iceServersCache)
+  if (iceServersPromise) return iceServersPromise
+
+  iceServersPromise = fetch(`${SERVER_URL}/turn-credentials`)
+    .then((r) => r.json())
+    .then((data: { iceServers: RTCIceServer[] }) => {
+      iceServersCache = data.iceServers
+      return iceServersCache
+    })
+    .catch((err) => {
+      console.warn('[peer] failed to fetch /turn-credentials, falling back to STUN:', err)
+      iceServersCache = FALLBACK_ICE
+      return FALLBACK_ICE
+    })
+
+  return iceServersPromise
+}
 
 export type PeerState = {
   localStream: MediaStream | null
@@ -21,8 +45,9 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
   const peerRef = useRef<PeerInstance | null>(null)
   const remoteIdRef = useRef<string | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const iceServersRef = useRef<RTCIceServer[] | null>(null)
 
-  // Buffers for events that arrive before getUserMedia resolves
+  // Buffers for events that arrive before getUserMedia or ICE servers resolve
   const pendingPeerJoinedRef = useRef<string | null>(null)
   const pendingSignalsRef = useRef<Array<{ from: string; signal: unknown }>>([])
 
@@ -40,12 +65,27 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
       setRemoteStream(null)
     }
 
+    function flushPending() {
+      if (!localStreamRef.current || !iceServersRef.current) return
+      const stream = localStreamRef.current
+
+      if (pendingPeerJoinedRef.current) {
+        createPeer(true, pendingPeerJoinedRef.current, stream)
+        pendingPeerJoinedRef.current = null
+      }
+
+      const pending = pendingSignalsRef.current.splice(0)
+      for (const { from, signal } of pending) {
+        processSignal(from, signal)
+      }
+    }
+
     function createPeer(initiator: boolean, remoteId: string, stream: MediaStream) {
       console.log('[peer] createPeer called — initiator:', initiator, 'remoteId:', remoteId, 'already exists:', !!peerRef.current)
       if (peerRef.current) return
 
       remoteIdRef.current = remoteId
-      const peer = new Peer({ initiator, trickle: true, stream })
+      const peer = new Peer({ initiator, trickle: true, stream, config: { iceServers: iceServersRef.current! } })
       peerRef.current = peer
 
       peer.on('signal', (sig: SignalData) => {
@@ -86,9 +126,9 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
 
     // Register all socket listeners immediately, before getUserMedia
     function onPeerJoined({ socketId }: { socketId: string }) {
-      console.log('[peer] peer-joined fired — socketId:', socketId, '| stream ready:', !!localStreamRef.current)
-      if (!localStreamRef.current) {
-        // Buffer — will flush once stream is ready
+      console.log('[peer] peer-joined fired — socketId:', socketId, '| stream ready:', !!localStreamRef.current, '| ice ready:', !!iceServersRef.current)
+      if (!localStreamRef.current || !iceServersRef.current) {
+        // Buffer — will flush once both stream and ICE servers are ready
         pendingPeerJoinedRef.current = socketId
         return
       }
@@ -107,9 +147,9 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
     }
 
     function onSignal({ from, signal }: { from: string; signal: unknown }) {
-      console.log('[peer] signal inbound from:', from, '| stream ready:', !!localStreamRef.current, '| peerRef exists:', !!peerRef.current)
-      if (!localStreamRef.current) {
-        // Buffer — will flush once stream is ready
+      console.log('[peer] signal inbound from:', from, '| stream ready:', !!localStreamRef.current, '| ice ready:', !!iceServersRef.current, '| peerRef exists:', !!peerRef.current)
+      if (!localStreamRef.current || !iceServersRef.current) {
+        // Buffer — will flush once both stream and ICE servers are ready
         pendingSignalsRef.current.push({ from, signal })
         return
       }
@@ -120,24 +160,18 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
     socket.on('peer-left', onPeerLeft)
     socket.on('signal', onSignal)
 
+    getIceServers().then((servers) => {
+      iceServersRef.current = servers
+      flushPending()
+    })
+
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
       .then((stream) => {
         console.log('[peer] getUserMedia resolved | peerRef already exists:', !!peerRef.current, '| remoteId:', remoteIdRef.current, '| pendingPeerJoined:', pendingPeerJoinedRef.current, '| pendingSignals:', pendingSignalsRef.current.length)
         localStreamRef.current = stream
         setLocalStream(stream)
-
-        // Flush buffered peer-joined (we are initiator)
-        if (pendingPeerJoinedRef.current) {
-          createPeer(true, pendingPeerJoinedRef.current, stream)
-          pendingPeerJoinedRef.current = null
-        }
-
-        // Flush buffered inbound signals (we are non-initiator)
-        const pending = pendingSignalsRef.current.splice(0)
-        for (const { from, signal } of pending) {
-          processSignal(from, signal)
-        }
+        flushPending()
       })
       .catch((err) => {
         console.error('[peer] getUserMedia failed:', err)
@@ -153,6 +187,7 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
         peerRef.current = null
       }
       remoteIdRef.current = null
+      iceServersRef.current = null
       pendingPeerJoinedRef.current = null
       pendingSignalsRef.current = []
       setRemoteStream(null)
