@@ -17,6 +17,7 @@ function corsOrigin(
 ) {
   const allowed =
     origin === CLIENT_URL || (!!originPattern && !!origin && originPattern.test(origin))
+  console.log(`[cors] origin="${origin}" CLIENT_URL="${CLIENT_URL}" pattern="${originPattern}" allowed=${allowed}`)
   cb(null, allowed)
 }
 
