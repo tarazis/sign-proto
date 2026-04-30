@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { socket } from '../socket'
+import { usePeerConnection } from '../usePeerConnection'
 
 export default function Room() {
   const { roomId } = useParams<{ roomId: string }>()
@@ -8,23 +9,31 @@ export default function Room() {
   const [isFull, setIsFull] = useState(false)
   const [copied, setCopied] = useState(false)
 
+  const { localStream, remoteStream, error } = usePeerConnection(roomId)
+
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream
+    }
+  }, [localStream])
+
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream
+    }
+  }, [remoteStream])
+
   useEffect(() => {
     if (!roomId) return
 
     socket.connect()
-
     socket.emit('join-room', { roomId })
 
     socket.on('room-update', ({ members }: { members: string[] }) => {
       setMembers(members)
-    })
-
-    socket.on('peer-joined', ({ socketId }: { socketId: string }) => {
-      console.log('[room] peer joined:', socketId)
-    })
-
-    socket.on('peer-left', ({ socketId }: { socketId: string }) => {
-      console.log('[room] peer left:', socketId)
     })
 
     socket.on('room-full', () => {
@@ -34,8 +43,6 @@ export default function Room() {
     return () => {
       socket.emit('leave-room', { roomId })
       socket.off('room-update')
-      socket.off('peer-joined')
-      socket.off('peer-left')
       socket.off('room-full')
       socket.disconnect()
     }
@@ -59,6 +66,28 @@ export default function Room() {
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center gap-8 p-6">
       <h1 className="text-4xl font-bold tracking-tight">SignBridge</h1>
+
+      {error ? (
+        <div className="w-full max-w-3xl bg-red-900/40 border border-red-700 rounded-xl p-4 text-red-300 text-sm">
+          {error}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-3xl">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full rounded-lg bg-black aspect-video"
+          />
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="w-full rounded-lg bg-black aspect-video"
+          />
+        </div>
+      )}
 
       <div className="w-full max-w-md bg-gray-800 rounded-xl p-6 flex flex-col gap-4">
         <div>
