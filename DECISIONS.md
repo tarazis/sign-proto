@@ -92,6 +92,17 @@ Notes:
 
 ---
 
+## 12. Hand tracking on the main thread, with canvas overlay separate from the WebRTC stream
+
+**Date:** 2026-04-30
+**Decision:** Run MediaPipe Hand Landmarker on the main thread via `requestAnimationFrame`. Draw landmarks on a `<canvas>` positioned absolutely over the local `<video>` element — never composited into the outgoing WebRTC stream. Expose a single hook `useHandTracking(videoRef) → { landmarks, handsDetected }`; no imperative frame-capture API.
+**Rationale:** Three coupled choices:
+(1) **Main thread, not worker.** A worker + `OffscreenCanvas` would isolate detection from React rendering, but it adds message-passing overhead, complicates lifecycle, and forces a `VideoFrame`/`ImageBitmap` transfer per tick. At one local 480p video on a modern laptop the main thread is comfortable, and `requestAnimationFrame` already pauses when the tab is hidden. Worker offload is an internal refactor we can do later without changing the hook's surface.
+(2) **Overlay, not stream composition.** Burning landmarks into the local stream (via canvas → `captureStream`) would let the remote peer see them, but that's the opposite of what we want: landmarks are local feedback for the signer, the remote should see clean video. Keeping them on a separate canvas also avoids re-encoding a composited stream and the latency that adds.
+(3) **One hook, no `sampleFrame`.** Phase 4 will sample frames for Gemini, but exposing a `sampleFrame` method now would conflate "detect hands" with "capture a still" and force the hook to own concerns it shouldn't. Phase 4's sampler will be a separate utility that reads from the same `videoRef` and gates on `handsDetected` — no coupling to this hook's internals.
+
+---
+
 ## 3. Monorepo structure
 
 **Date:** 2026-04-27
