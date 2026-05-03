@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { socket } from '../socket'
 import { usePeerConnection } from '../usePeerConnection'
 import { useHandTracking } from '../useHandTracking'
+import { HandOverlay } from '../HandOverlay'
 
 export default function Room() {
   const { roomId } = useParams<{ roomId: string }>()
@@ -13,10 +14,10 @@ export default function Room() {
   const { localStream, remoteStream, error } = usePeerConnection(roomId)
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
-  const { landmarks, handsDetected } = useHandTracking(localVideoRef)
-  // eslint-disable-next-line no-console
-  console.log('[hands]', landmarks.length, handsDetected)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  // handsDetected is unused in Phase 3; Phase 4 will consume it for frame sampling
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { landmarks, handsDetected: _handsDetected } = useHandTracking(localVideoRef)
 
   useEffect(() => {
     if (localVideoRef.current) {
@@ -77,19 +78,26 @@ export default function Room() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-3xl">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full rounded-lg bg-black aspect-video"
-          />
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-full rounded-lg bg-black aspect-video"
-          />
+          <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+            {localStream && (
+              <HandOverlay videoRef={localVideoRef} landmarks={landmarks} />
+            )}
+          </div>
+          <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+            />
+          </div>
         </div>
       )}
 
