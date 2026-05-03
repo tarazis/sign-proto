@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { socket } from '../socket'
 import { usePeerConnection } from '../usePeerConnection'
+import { useHandTracking } from '../useHandTracking'
 
 export default function Room() {
   const { roomId } = useParams<{ roomId: string }>()
@@ -12,6 +13,9 @@ export default function Room() {
   const { localStream, remoteStream, error } = usePeerConnection(roomId)
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
+  const { landmarks, handsDetected } = useHandTracking(localVideoRef)
+  // eslint-disable-next-line no-console
+  console.log('[hands]', landmarks.length, handsDetected)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
