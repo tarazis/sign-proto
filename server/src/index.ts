@@ -2,6 +2,7 @@ import express from 'express'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import cors from 'cors'
+import { getOrCreateSession, closeSession } from './geminiSessions'
 
 const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173'
 const PORT = process.env.PORT ?? 3001
@@ -97,6 +98,14 @@ io.on('connection', (socket) => {
     handleLeave(socket.id, roomId)
   })
 
+  socket.on('video-frame', async ({ roomId, frameBase64 }: { roomId: string; frameBase64: string }) => {
+    if (!rooms.get(roomId)?.has(socket.id)) return
+    console.log(`[frame] room=${roomId} socket=${socket.id} bytes=${frameBase64.length} ts=${Date.now()}`)
+    const state = await getOrCreateSession(roomId, io)
+    if (!state) return
+    state.signerSocketId = socket.id
+  })
+
   socket.on('signal', ({ to, signal }: { to: string; signal: unknown }) => {
     if (typeof to !== 'string') return
     io.to(to).emit('signal', { from: socket.id, signal })
@@ -121,6 +130,10 @@ io.on('connection', (socket) => {
 
     const remaining = getRoomMembers(roomId)
     console.log(`[room] ${socketId} left ${roomId} (${remaining.length}/${ROOM_CAPACITY})`)
+
+    if (!rooms.has(roomId)) {
+      closeSession(roomId)
+    }
 
     io.to(roomId).emit('room-update', { members: remaining })
     io.to(roomId).emit('peer-left', { socketId })
