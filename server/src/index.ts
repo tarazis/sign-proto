@@ -104,6 +104,11 @@ io.on('connection', (socket) => {
     const state = await getOrCreateSession(roomId, io)
     if (!state) return
     state.signerSocketId = socket.id
+    try {
+      state.session.sendRealtimeInput({ media: { data: frameBase64, mimeType: 'image/jpeg' } })
+    } catch (err) {
+      console.error(`[frame] sendRealtimeInput failed for room ${roomId}:`, err)
+    }
   })
 
   socket.on('signal', ({ to, signal }: { to: string; signal: unknown }) => {
