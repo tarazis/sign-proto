@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { socket } from '../socket'
 import { usePeerConnection } from '../usePeerConnection'
 import { useHandTracking } from '../useHandTracking'
+import { useCaptions } from '../useCaptions'
 import { HandOverlay } from '../HandOverlay'
 
 export default function Room() {
@@ -15,9 +16,10 @@ export default function Room() {
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
-  // handsDetected is unused in Phase 3; Phase 4 will consume it for frame sampling
+  // handsDetected wired up in the next commit (useFrameSampler)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { landmarks, handsDetected: _handsDetected } = useHandTracking(localVideoRef)
+  const { current: caption, status: captionStatus } = useCaptions(roomId)
 
   useEffect(() => {
     if (localVideoRef.current) {
@@ -97,6 +99,16 @@ export default function Room() {
               playsInline
               className="w-full h-full object-cover"
             />
+            {captionStatus === 'unavailable' && (
+              <div className="absolute top-2 right-2 bg-red-900/70 text-red-200 text-xs px-2 py-1 rounded pointer-events-none">
+                Captions unavailable
+              </div>
+            )}
+            {caption && (
+              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xl text-center px-4 py-3 pointer-events-none">
+                {caption}
+              </div>
+            )}
           </div>
         </div>
       )}

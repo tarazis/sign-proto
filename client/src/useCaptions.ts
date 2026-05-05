@@ -19,7 +19,6 @@ export function useCaptions(roomId: string | undefined): CaptionsState {
     if (!roomId) return
 
     function onCaption({ text }: { text: string; timestamp: number }) {
-      console.log('[captions] received:', text)
       if (clearTimeoutRef.current !== null) {
         window.clearTimeout(clearTimeoutRef.current)
       }
@@ -31,7 +30,6 @@ export function useCaptions(roomId: string | undefined): CaptionsState {
     }
 
     function onCaptionStatus({ status }: { status: CaptionStatus; reason?: string }) {
-      console.log('[captions] status:', status)
       setStatus(status)
     }
 
