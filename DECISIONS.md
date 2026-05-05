@@ -108,3 +108,27 @@ Notes:
 **Date:** 2026-04-27
 **Decision:** Keep `client/` and `server/` as sibling directories in a single repo rather than separate repos or a turborepo setup.
 **Rationale:** The project is small (two packages, one developer). A simple monorepo avoids cross-repo PR coordination while keeping deployment configs and shared decisions in one place. We can add a workspace manager (turborepo, nx) later if build complexity grows, but adding that overhead now would be premature.
+
+---
+
+## 13. Hidden `<canvas>` over `OffscreenCanvas` for frame capture
+
+**Date:** 2026-05-05
+**Decision:** Sample frames in `useFrameSampler` via a hidden `HTMLCanvasElement` created with `document.createElement('canvas')` and never mounted. Use synchronous `canvas.toDataURL('image/jpeg', 0.7).split(',')[1]` to produce raw base64 for the server.
+**Rationale:** OffscreenCanvas + a worker would isolate encoding from the main thread, but Safari/iOS support is uneven and the pattern requires `VideoFrame`/`ImageBitmap` transfers per tick. At 2 FPS over one local stream the synchronous path is comfortably cheap on the main thread — well under a frame budget. `toDataURL` over `Blob` + `FileReader` keeps the call site one-line and avoids an async hop per frame. Worker offload remains a drop-in refactor later without changing the hook's surface.
+
+---
+
+## 14. 500 ms hysteresis on hand-detection stop, tracked via ref not state
+
+**Date:** 2026-05-05
+**Decision:** When `handsDetected` flips false, wait 500 ms before halting frame sampling. Track the debounced "effective" state in a `useRef`, never in `useState`.
+**Rationale:** MediaPipe drops `handsDetected` to false on transient lighting changes, partial occlusion, or motion blur — even mid-sign. Stopping the sampler immediately would create rapid start/stop churn and lose the frames that matter most. The hysteresis lives in a ref + `setTimeout` rather than React state because it's a gating signal for an interval, not something the UI renders. Lifting it to state would force a re-render on every flicker for no visual change.
+
+---
+
+## 15. Caption replace semantics with 4 s auto-clear, no history
+
+**Date:** 2026-05-05
+**Decision:** `useCaptions` exposes a single `current: string | null`. Each new caption replaces the previous text and resets a 4 s auto-clear timer; if no caption arrives within that window, the overlay clears.
+**Rationale:** Captions are a real-time accessibility surface for live signing, not a transcript. Stacking them or scrolling a history would compete with the remote video for visual attention and keep stale text on screen long after the moment has passed. Replace-and-fade matches video-call CC conventions and keeps the overlay component dead simple — one string, one timer. A scrolling transcript is a deliberate v2 feature; server-side dedup means the client doesn't need to filter repeats.
