@@ -18,7 +18,8 @@ export function useCaptions(roomId: string | undefined): CaptionsState {
   useEffect(() => {
     if (!roomId) return
 
-    function onCaption({ text }: { text: string; timestamp: number }) {
+    function onCaption({ text, timestamp }: { text: string; timestamp: number }) {
+      console.log('[caption]', text, '@', new Date(timestamp).toISOString())
       if (clearTimeoutRef.current !== null) {
         window.clearTimeout(clearTimeoutRef.current)
       }
@@ -29,7 +30,8 @@ export function useCaptions(roomId: string | undefined): CaptionsState {
       }, CLEAR_AFTER_MS)
     }
 
-    function onCaptionStatus({ status }: { status: CaptionStatus; reason?: string }) {
+    function onCaptionStatus({ status, reason }: { status: CaptionStatus; reason?: string }) {
+      console.log('[caption-status]', status, reason ?? '')
       setStatus(status)
     }
 

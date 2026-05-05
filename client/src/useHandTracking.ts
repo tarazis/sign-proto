@@ -11,7 +11,8 @@ const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 
 export function useHandTracking(
-  videoRef: React.RefObject<HTMLVideoElement>
+  videoRef: React.RefObject<HTMLVideoElement>,
+  enabled: boolean = true,
 ): HandTrackingState {
   const [landmarks, setLandmarks] = useState<HandLandmark[][]>([])
   const [handsDetected, setHandsDetected] = useState(false)
@@ -22,8 +23,9 @@ export function useHandTracking(
   const lastVideoTimeRef = useRef<number>(-1)
   const mountedRef = useRef(true)
 
-  // Effect A: one-shot WASM init / teardown
+  // Effect A: WASM init / teardown, gated on enabled
   useEffect(() => {
+    if (!enabled) return
     mountedRef.current = true
 
     async function init() {
@@ -60,8 +62,11 @@ export function useHandTracking(
       }
       landmarkerRef.current?.close()
       landmarkerRef.current = null
+      setLandmarkerReady(false)
+      setLandmarks([])
+      setHandsDetected(false)
     }
-  }, [])
+  }, [enabled])
 
   // Effect B: RAF detection loop, gated on stream + landmarker both ready
   const localStream = videoRef.current?.srcObject as MediaStream | null | undefined

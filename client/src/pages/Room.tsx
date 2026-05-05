@@ -17,9 +17,13 @@ export default function Room() {
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
-  const { landmarks, handsDetected } = useHandTracking(localVideoRef)
+  // Role assignment by join order: first joiner is the signer (sends frames to
+  // Gemini); second joiner is receive-only. Single-user mode is also signer so
+  // the captions pipeline is testable solo.
+  const isSigner = members.length === 0 || members[0] === socket.id
+  const { landmarks, handsDetected } = useHandTracking(localVideoRef, isSigner)
   const { current: caption, status: captionStatus } = useCaptions(roomId)
-  useFrameSampler(localVideoRef, handsDetected, roomId)
+  useFrameSampler(localVideoRef, handsDetected && isSigner, roomId)
 
   useEffect(() => {
     if (localVideoRef.current) {
@@ -88,7 +92,7 @@ export default function Room() {
               muted
               className="w-full h-full object-cover"
             />
-            {localStream && (
+            {localStream && isSigner && (
               <HandOverlay videoRef={localVideoRef} landmarks={landmarks} />
             )}
           </div>
