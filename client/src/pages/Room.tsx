@@ -4,6 +4,7 @@ import { socket } from '../socket'
 import { usePeerConnection } from '../usePeerConnection'
 import { useHandTracking } from '../useHandTracking'
 import { useCaptions } from '../useCaptions'
+import { useFrameSampler } from '../useFrameSampler'
 import { HandOverlay } from '../HandOverlay'
 
 export default function Room() {
@@ -16,10 +17,9 @@ export default function Room() {
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
-  // handsDetected wired up in the next commit (useFrameSampler)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { landmarks, handsDetected: _handsDetected } = useHandTracking(localVideoRef)
+  const { landmarks, handsDetected } = useHandTracking(localVideoRef)
   const { current: caption, status: captionStatus } = useCaptions(roomId)
+  useFrameSampler(localVideoRef, handsDetected, roomId)
 
   useEffect(() => {
     if (localVideoRef.current) {
