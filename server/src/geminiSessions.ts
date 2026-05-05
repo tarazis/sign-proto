@@ -3,7 +3,7 @@ import { Server } from 'socket.io'
 
 const GEMINI_ENABLED = process.env.GEMINI_ENABLED === 'true'
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? ''
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-live-2.5-flash-preview'
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.1-flash-live-preview'  // Live API model: AUDIO output only; use outputAudioTranscription to get text
 
 const SYSTEM_INSTRUCTION = `You are an ASL (American Sign Language) interpreter. You will receive a stream of JPEG frames showing a person signing. Your job is to recognize the signs and output the corresponding English word or short phrase.
 
@@ -16,7 +16,11 @@ Rules:
 - ASL only. Do not interpret signs from other sign languages.`
 
 interface GeminiSession {
-  sendRealtimeInput(params: { media?: { data?: string; mimeType?: string } }): void
+  sendRealtimeInput(params: {
+    media?: { data?: string; mimeType?: string }
+    video?: { data?: string; mimeType?: string }
+    text?: string
+  }): void
   close(): void
 }
 
@@ -30,21 +34,30 @@ export type RoomGeminiState = {
   // session self-discard when onerror and onclose both fire for the same failure.
   sessionGeneration: number
   closing: boolean
+  // Debug counters
+  frameCount: number
+  msgCount: number
+  heartbeat?: ReturnType<typeof setInterval>
 }
 
 const geminiSessions = new Map<string, RoomGeminiState>()
 // In-flight dedup: prevents duplicate session creation when frames arrive during init
 const sessionsBeingCreated = new Map<string, Promise<RoomGeminiState | null>>()
+// Room-level latch: after persistent failure, do not reopen until room is torn down.
+const unavailableRooms = new Set<string>()
 
 // --- mock path ---
 
 function createMockSession(roomId: string, io: Server, state: RoomGeminiState): GeminiSession {
   const interval = setInterval(() => {
+    console.log(`[mock] tick for room ${roomId}, signerSocketId="${state.signerSocketId}"`)
     if (!state.signerSocketId) return
     const text = 'mock caption'
     const now = Date.now()
     state.lastCaption = text
     state.lastCaptionAt = now
+    const room = io.sockets.adapter.rooms.get(roomId)
+    console.log(`[mock] room members: ${room ? [...room].join(', ') : 'none'}, emitting except ${state.signerSocketId}`)
     io.to(roomId).except(state.signerSocketId).emit('caption', { text, timestamp: now })
   }, 2000)
 
@@ -58,10 +71,11 @@ function createMockSession(roomId: string, io: Server, state: RoomGeminiState): 
 
 // --- real Gemini path ---
 
-function degradeSession(roomId: string, io: Server): void {
-  console.error(`[gemini] session permanently unavailable for room ${roomId}`)
+function degradeSession(roomId: string, io: Server, clientReason = 'Gemini session failed'): void {
+  console.error(`[gemini] session permanently unavailable for room ${roomId}: ${clientReason}`)
   geminiSessions.delete(roomId)
-  io.to(roomId).emit('caption-status', { status: 'unavailable', reason: 'Gemini session failed' })
+  unavailableRooms.add(roomId)
+  io.to(roomId).emit('caption-status', { status: 'unavailable', reason: clientReason })
 }
 
 function handleSessionFailure(roomId: string, io: Server, state: RoomGeminiState): void {
@@ -78,9 +92,8 @@ function handleSessionFailure(roomId: string, io: Server, state: RoomGeminiState
 }
 
 async function openRealSession(roomId: string, io: Server, state: RoomGeminiState): Promise<void> {
-  // Capture generation before the async connect so stale callbacks from the
-  // previous session can check state.sessionGeneration !== generation and bail.
   const generation = ++state.sessionGeneration
+  console.log(`[gemini] opening real session for room ${roomId}, model=${GEMINI_MODEL}, keyLength=${GEMINI_API_KEY.length}`)
 
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY })
   const session = await ai.live.connect({
@@ -92,14 +105,49 @@ async function openRealSession(roomId: string, io: Server, state: RoomGeminiStat
         io.to(roomId).emit('caption-status', { status: 'available' })
       },
       onmessage: (msg) => {
-        if (state.sessionGeneration !== generation || !state.signerSocketId) return
-        const text = msg.text
-        if (!text) return
-        const now = Date.now()
-        if (text === state.lastCaption && now - state.lastCaptionAt < 1000) return
-        state.lastCaption = text
-        state.lastCaptionAt = now
-        io.to(roomId).except(state.signerSocketId).emit('caption', { text, timestamp: now })
+        try {
+          state.msgCount += 1
+          const parts = msg.serverContent?.modelTurn?.parts ?? []
+          const partText = parts
+            .map((p) => p.text?.trim() ?? '')
+            .filter(Boolean)
+            .join(' ')
+            .trim()
+          const transcript = msg.serverContent?.outputTranscription?.text ?? ''
+          const inputTranscript = msg.serverContent?.inputTranscription?.text ?? ''
+          console.log(
+            `[gemini-msg #${state.msgCount}] room=${roomId} ` +
+            `setupComplete=${msg.setupComplete != null} ` +
+            `turnComplete=${msg.serverContent?.turnComplete ?? false} ` +
+            `generationComplete=${msg.serverContent?.generationComplete ?? false} ` +
+            `interrupted=${msg.serverContent?.interrupted ?? false} ` +
+            `partText="${partText}" ` +
+            `outputTranscript="${transcript}" ` +
+            `inputTranscript="${inputTranscript}"`,
+          )
+
+          const text = (transcript || partText).trim()
+          if (state.sessionGeneration !== generation || !state.signerSocketId) {
+            console.log(`[gemini-msg #${state.msgCount}] skip emit: gen=${state.sessionGeneration} expected=${generation} signer="${state.signerSocketId}"`)
+            return
+          }
+          if (!text) return
+          const now = Date.now()
+          if (text === state.lastCaption && now - state.lastCaptionAt < 1000) return
+          state.lastCaption = text
+          state.lastCaptionAt = now
+          const roomMembers = [...(io.sockets.adapter.rooms.get(roomId) ?? new Set<string>())]
+          const recipients = roomMembers.filter((socketId) => socketId !== state.signerSocketId)
+          console.log(
+            `[gemini-emit] room=${roomId} text="${text}" signer=${state.signerSocketId} members=[${roomMembers.join(',')}] recipients=[${recipients.join(',')}]`,
+          )
+          if (recipients.length === 0) console.warn(`[gemini-emit] no recipients in room ${roomId}; caption dropped`)
+          for (const socketId of recipients) {
+            io.to(socketId).emit('caption', { text, timestamp: now })
+          }
+        } catch (err) {
+          console.error('[gemini] onmessage handler error:', err)
+        }
       },
       onerror: (e) => {
         if (state.sessionGeneration !== generation || state.closing) return
@@ -107,14 +155,27 @@ async function openRealSession(roomId: string, io: Server, state: RoomGeminiStat
         handleSessionFailure(roomId, io, state)
       },
       onclose: (e) => {
-        if (state.sessionGeneration !== generation || state.closing || e.wasClean) return
-        console.warn(`[gemini] session closed unexpectedly for room ${roomId}: code=${e.code}`)
-        handleSessionFailure(roomId, io, state)
+        const reasonStr = typeof e.reason === 'string' ? e.reason : ''
+        console.warn(
+          `[gemini] session closed for room ${roomId}: code=${e.code} wasClean=${e.wasClean} reason=${reasonStr.slice(0, 500)}`,
+        )
+        if (state.sessionGeneration !== generation || state.closing) return
+        // Normal client/server shutdown (e.g. app calling session.close()).
+        if (e.code === 1000) return
+        const summary = reasonStr.slice(0, 200) || `Gemini WebSocket closed (code ${e.code})`
+        // Transient transport issues may recover with one reconnect; API errors (e.g. 1011 billing) should not loop.
+        if (!e.wasClean && e.code !== 1011) {
+          handleSessionFailure(roomId, io, state)
+          return
+        }
+        degradeSession(roomId, io, summary)
       },
     },
     config: {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
+      outputAudioTranscription: {},
       systemInstruction: SYSTEM_INSTRUCTION,
-      responseModalities: [Modality.TEXT],
     },
   })
 
@@ -127,6 +188,8 @@ export async function getOrCreateSession(
   roomId: string,
   io: Server,
 ): Promise<RoomGeminiState | null> {
+  if (GEMINI_ENABLED && unavailableRooms.has(roomId)) return null
+
   const existing = geminiSessions.get(roomId)
   if (existing) return existing
 
@@ -143,7 +206,12 @@ export async function getOrCreateSession(
         reconnectAttempted: false,
         sessionGeneration: 0,
         closing: false,
+        frameCount: 0,
+        msgCount: 0,
       }
+      state.heartbeat = setInterval(() => {
+        console.log(`[gemini-heartbeat] room=${roomId} framesSent=${state.frameCount} msgsReceived=${state.msgCount} signer="${state.signerSocketId}" closing=${state.closing}`)
+      }, 5000)
 
       if (!GEMINI_ENABLED) {
         state.session = createMockSession(roomId, io, state)
@@ -158,6 +226,7 @@ export async function getOrCreateSession(
     } catch (err) {
       console.error(`[gemini] failed to create session for room ${roomId}:`, err)
       if (GEMINI_ENABLED) {
+        unavailableRooms.add(roomId)
         io.to(roomId).emit('caption-status', { status: 'unavailable', reason: 'Gemini session failed to start' })
       }
       return null
@@ -172,13 +241,17 @@ export async function getOrCreateSession(
 
 export function closeSession(roomId: string): void {
   const state = geminiSessions.get(roomId)
-  if (!state) return
-  state.closing = true
-  try {
-    state.session.close()
-  } catch (err) {
-    console.error(`[gemini] error closing session for room ${roomId}:`, err)
+  if (state) {
+    state.closing = true
+    if (state.heartbeat) clearInterval(state.heartbeat)
+    try {
+      state.session.close()
+    } catch (err) {
+      console.error(`[gemini] error closing session for room ${roomId}:`, err)
+    }
   }
+  sessionsBeingCreated.delete(roomId)
+  unavailableRooms.delete(roomId)
   geminiSessions.delete(roomId)
   console.log(`[gemini] closed session for room ${roomId}`)
 }

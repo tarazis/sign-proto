@@ -8,6 +8,20 @@ import { getOrCreateSession, closeSession } from './geminiSessions'
 const CLIENT_URL = process.env.CLIENT_URL ?? 'http://localhost:5173'
 const PORT = process.env.PORT ?? 3001
 const ROOM_CAPACITY = 2
+const GEMINI_DEBUG_TEXT_NUDGE_EVERY = Number(process.env.GEMINI_DEBUG_TEXT_NUDGE_EVERY ?? '8')
+
+/** JPEG must start with FFD8FF after base64 decode; junk (e.g. AAAA) as image/jpeg closes Live with 1007 invalid argument. */
+function isLikelyJpegBase64(b64: string): boolean {
+  if (!b64 || b64.length < 4) return false
+  try {
+    const buf = Buffer.from(b64, 'base64')
+    return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
+  } catch {
+    return false
+  }
+}
+
+const warnedInvalidJpegByRoom = new Set<string>()
 
 const originPattern = process.env.CORS_ORIGIN_PATTERN
   ? new RegExp(process.env.CORS_ORIGIN_PATTERN)
@@ -101,12 +115,26 @@ io.on('connection', (socket) => {
 
   socket.on('video-frame', async ({ roomId, frameBase64 }: { roomId: string; frameBase64: string }) => {
     if (!rooms.get(roomId)?.has(socket.id)) return
-    console.log(`[frame] room=${roomId} socket=${socket.id} bytes=${frameBase64.length} ts=${Date.now()}`)
+    if (!isLikelyJpegBase64(frameBase64)) {
+      if (!warnedInvalidJpegByRoom.has(roomId)) {
+        warnedInvalidJpegByRoom.add(roomId)
+        console.warn(
+          `[frame] skipped: payload is not JPEG (SOI FFD8FF). Placeholders like AAAA break Gemini Live (WS 1007). Use a real frame or omit emits.`,
+        )
+      }
+      return
+    }
     const state = await getOrCreateSession(roomId, io)
     if (!state) return
     state.signerSocketId = socket.id
     try {
-      state.session.sendRealtimeInput({ media: { data: frameBase64, mimeType: 'image/jpeg' } })
+      state.session.sendRealtimeInput({ video: { data: frameBase64, mimeType: 'image/jpeg' } })
+      state.frameCount += 1
+      // Optional debug nudge to force generation turns while testing transport.
+      if (GEMINI_DEBUG_TEXT_NUDGE_EVERY > 0 && state.frameCount % GEMINI_DEBUG_TEXT_NUDGE_EVERY === 0) {
+        state.session.sendRealtimeInput({ text: 'Output one short word describing the current sign now.' })
+        console.log(`[frame-nudge #${state.frameCount}] room=${roomId} sent text nudge`)
+      }
     } catch (err) {
       console.error(`[frame] sendRealtimeInput failed for room ${roomId}:`, err)
     }
