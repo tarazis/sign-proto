@@ -1,8 +1,8 @@
-# SignBridge
+# SignProto
 
 Real-time WebRTC video chat with AI-powered ASL sign language captioning.
 
-[Live Demo](https://signbridge.vercel.app) · Demo Video (link to be added later)
+[Live Demo](https://sign-proto.vercel.app) · Demo Video (link to be added later)
 
 ## What it does
 
@@ -80,9 +80,9 @@ App URLs:
 
 ## Deployment
 
-- **Frontend (Vercel)**: set root directory to `client`; set `VITE_SERVER_URL=https://signbridge-api.onrender.com`
+- **Frontend (Vercel)**: set root directory to `client`; set `VITE_SERVER_URL=https://signproto-api.onrender.com`
 - **Backend (Render)**: set root directory to `server`; build command `npm install && npm run build`; start command `npm start`
-- **Backend env vars (Render)**: `PORT`, `CLIENT_URL=https://signbridge.vercel.app`, `GEMINI_ENABLED`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_DEBUG_TEXT_NUDGE_EVERY`
+- **Backend env vars (Render)**: `PORT`, `CLIENT_URL=https://sign-proto.vercel.app`, `GEMINI_ENABLED`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_DEBUG_TEXT_NUDGE_EVERY`
 
 ## v1 limitations
 
