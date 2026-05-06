@@ -34,10 +34,7 @@ export type RoomGeminiState = {
   // session self-discard when onerror and onclose both fire for the same failure.
   sessionGeneration: number
   closing: boolean
-  // Debug counters
   frameCount: number
-  msgCount: number
-  heartbeat?: ReturnType<typeof setInterval>
 }
 
 const geminiSessions = new Map<string, RoomGeminiState>()
@@ -50,14 +47,11 @@ const unavailableRooms = new Set<string>()
 
 function createMockSession(roomId: string, io: Server, state: RoomGeminiState): GeminiSession {
   const interval = setInterval(() => {
-    console.log(`[mock] tick for room ${roomId}, signerSocketId="${state.signerSocketId}"`)
     if (!state.signerSocketId) return
     const text = 'mock caption'
     const now = Date.now()
     state.lastCaption = text
     state.lastCaptionAt = now
-    const room = io.sockets.adapter.rooms.get(roomId)
-    console.log(`[mock] room members: ${room ? [...room].join(', ') : 'none'}, emitting except ${state.signerSocketId}`)
     io.to(roomId).except(state.signerSocketId).emit('caption', { text, timestamp: now })
   }, 2000)
 
@@ -93,7 +87,7 @@ function handleSessionFailure(roomId: string, io: Server, state: RoomGeminiState
 
 async function openRealSession(roomId: string, io: Server, state: RoomGeminiState): Promise<void> {
   const generation = ++state.sessionGeneration
-  console.log(`[gemini] opening real session for room ${roomId}, model=${GEMINI_MODEL}, keyLength=${GEMINI_API_KEY.length}`)
+  console.log(`[gemini] opening real session for room ${roomId}, model=${GEMINI_MODEL}`)
 
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY })
   const session = await ai.live.connect({
@@ -106,7 +100,6 @@ async function openRealSession(roomId: string, io: Server, state: RoomGeminiStat
       },
       onmessage: (msg) => {
         try {
-          state.msgCount += 1
           const parts = msg.serverContent?.modelTurn?.parts ?? []
           const partText = parts
             .map((p) => p.text?.trim() ?? '')
@@ -114,23 +107,9 @@ async function openRealSession(roomId: string, io: Server, state: RoomGeminiStat
             .join(' ')
             .trim()
           const transcript = msg.serverContent?.outputTranscription?.text ?? ''
-          const inputTranscript = msg.serverContent?.inputTranscription?.text ?? ''
-          console.log(
-            `[gemini-msg #${state.msgCount}] room=${roomId} ` +
-            `setupComplete=${msg.setupComplete != null} ` +
-            `turnComplete=${msg.serverContent?.turnComplete ?? false} ` +
-            `generationComplete=${msg.serverContent?.generationComplete ?? false} ` +
-            `interrupted=${msg.serverContent?.interrupted ?? false} ` +
-            `partText="${partText}" ` +
-            `outputTranscript="${transcript}" ` +
-            `inputTranscript="${inputTranscript}"`,
-          )
 
           const text = (transcript || partText).trim()
-          if (state.sessionGeneration !== generation || !state.signerSocketId) {
-            console.log(`[gemini-msg #${state.msgCount}] skip emit: gen=${state.sessionGeneration} expected=${generation} signer="${state.signerSocketId}"`)
-            return
-          }
+          if (state.sessionGeneration !== generation || !state.signerSocketId) return
           if (!text) return
           const now = Date.now()
           if (text === state.lastCaption && now - state.lastCaptionAt < 1000) return
@@ -138,9 +117,6 @@ async function openRealSession(roomId: string, io: Server, state: RoomGeminiStat
           state.lastCaptionAt = now
           const roomMembers = [...(io.sockets.adapter.rooms.get(roomId) ?? new Set<string>())]
           const recipients = roomMembers.filter((socketId) => socketId !== state.signerSocketId)
-          console.log(
-            `[gemini-emit] room=${roomId} text="${text}" signer=${state.signerSocketId} members=[${roomMembers.join(',')}] recipients=[${recipients.join(',')}]`,
-          )
           if (recipients.length === 0) console.warn(`[gemini-emit] no recipients in room ${roomId}; caption dropped`)
           for (const socketId of recipients) {
             io.to(socketId).emit('caption', { text, timestamp: now })
@@ -207,11 +183,7 @@ export async function getOrCreateSession(
         sessionGeneration: 0,
         closing: false,
         frameCount: 0,
-        msgCount: 0,
       }
-      state.heartbeat = setInterval(() => {
-        console.log(`[gemini-heartbeat] room=${roomId} framesSent=${state.frameCount} msgsReceived=${state.msgCount} signer="${state.signerSocketId}" closing=${state.closing}`)
-      }, 5000)
 
       if (!GEMINI_ENABLED) {
         state.session = createMockSession(roomId, io, state)
@@ -243,7 +215,6 @@ export function closeSession(roomId: string): void {
   const state = geminiSessions.get(roomId)
   if (state) {
     state.closing = true
-    if (state.heartbeat) clearInterval(state.heartbeat)
     try {
       state.session.close()
     } catch (err) {

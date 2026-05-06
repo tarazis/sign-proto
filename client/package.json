@@ -2,6 +2,7 @@
   "name": "signbridge-client",
   "private": true,
   "version": "0.1.0",
+  "description": "Frontend for SignBridge real-time WebRTC ASL captioning.",
   "type": "module",
   "scripts": {
     "dev": "vite",

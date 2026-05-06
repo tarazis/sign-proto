@@ -130,10 +130,8 @@ io.on('connection', (socket) => {
     try {
       state.session.sendRealtimeInput({ video: { data: frameBase64, mimeType: 'image/jpeg' } })
       state.frameCount += 1
-      // Optional debug nudge to force generation turns while testing transport.
       if (GEMINI_DEBUG_TEXT_NUDGE_EVERY > 0 && state.frameCount % GEMINI_DEBUG_TEXT_NUDGE_EVERY === 0) {
         state.session.sendRealtimeInput({ text: 'Output one short word describing the current sign now.' })
-        console.log(`[frame-nudge #${state.frameCount}] room=${roomId} sent text nudge`)
       }
     } catch (err) {
       console.error(`[frame] sendRealtimeInput failed for room ${roomId}:`, err)

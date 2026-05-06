@@ -52,8 +52,6 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
   const pendingSignalsRef = useRef<Array<{ from: string; signal: unknown }>>([])
 
   useEffect(() => {
-    console.log('[peer] effect mounted, roomId:', roomId, 'socket:', socket.id)
-
     if (!roomId) return
 
     function teardownPeer() {
@@ -81,7 +79,6 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
     }
 
     function createPeer(initiator: boolean, remoteId: string, stream: MediaStream) {
-      console.log('[peer] createPeer called — initiator:', initiator, 'remoteId:', remoteId, 'already exists:', !!peerRef.current)
       if (peerRef.current) return
 
       remoteIdRef.current = remoteId
@@ -89,21 +86,14 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
       peerRef.current = peer
 
       peer.on('signal', (sig: SignalData) => {
-        console.log('[peer] signal outbound → to:', remoteId, '| type:', (sig as any).type ?? 'candidate')
         socket.emit('signal', { to: remoteId, signal: sig })
       })
 
       peer.on('stream', (s: MediaStream) => {
-        console.log('[peer] remote stream received')
         setRemoteStream(s)
       })
 
-      peer.on('connect', () => {
-        console.log('[peer] data channel open')
-      })
-
       peer.on('close', () => {
-        console.log('[peer] closed')
         teardownPeer()
       })
 
@@ -126,7 +116,6 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
 
     // Register all socket listeners immediately, before getUserMedia
     function onPeerJoined({ socketId }: { socketId: string }) {
-      console.log('[peer] peer-joined fired — socketId:', socketId, '| stream ready:', !!localStreamRef.current, '| ice ready:', !!iceServersRef.current)
       if (!localStreamRef.current || !iceServersRef.current) {
         // Buffer — will flush once both stream and ICE servers are ready
         pendingPeerJoinedRef.current = socketId
@@ -136,7 +125,6 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
     }
 
     function onPeerLeft({ socketId }: { socketId: string }) {
-      console.log('[peer] peer-left:', socketId)
       if (remoteIdRef.current === socketId) {
         teardownPeer()
       }
@@ -147,7 +135,6 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
     }
 
     function onSignal({ from, signal }: { from: string; signal: unknown }) {
-      console.log('[peer] signal inbound from:', from, '| stream ready:', !!localStreamRef.current, '| ice ready:', !!iceServersRef.current, '| peerRef exists:', !!peerRef.current)
       if (!localStreamRef.current || !iceServersRef.current) {
         // Buffer — will flush once both stream and ICE servers are ready
         pendingSignalsRef.current.push({ from, signal })
@@ -168,7 +155,6 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
       .then((stream) => {
-        console.log('[peer] getUserMedia resolved | peerRef already exists:', !!peerRef.current, '| remoteId:', remoteIdRef.current, '| pendingPeerJoined:', pendingPeerJoinedRef.current, '| pendingSignals:', pendingSignalsRef.current.length)
         localStreamRef.current = stream
         setLocalStream(stream)
         flushPending()
@@ -179,8 +165,6 @@ export function usePeerConnection(roomId: string | undefined): PeerState {
       })
 
     return () => {
-      console.log('[peer] effect cleanup, roomId:', roomId)
-
       // 1. Destroy peer first
       if (peerRef.current) {
         peerRef.current.destroy()
