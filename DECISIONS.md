@@ -8,7 +8,7 @@
 
 **Date:** 2026-04-27
 **Decision:** Use Vite + React (SPA) rather than Next.js for the frontend.
-**Rationale:** SignBridge is a real-time peer-to-peer video app. It has no server-rendered pages, no SEO requirements, and no API routes — all communication goes through Socket.IO and WebRTC. Next.js adds SSR/SSG complexity with no benefit here. Vite gives faster dev iteration and a simpler mental model for a pure client-side app.
+**Rationale:** SignProto is a real-time peer-to-peer video app. It has no server-rendered pages, no SEO requirements, and no API routes — all communication goes through Socket.IO and WebRTC. Next.js adds SSR/SSG complexity with no benefit here. Vite gives faster dev iteration and a simpler mental model for a pure client-side app.
 
 ---
 
@@ -64,7 +64,7 @@ Notes:
 
 **Date:** 2026-04-29
 **Decision:** Rooms are hard-capped at 2 participants. A third join attempt is rejected with a `room-full` event.
-**Rationale:** SignBridge is explicitly a 1-on-1 video call tool. WebRTC peer connections are modeled as exactly two endpoints. Allowing more than 2 would require a mesh or SFU architecture — neither of which is in scope. The cap is enforced server-side so it cannot be bypassed by the client.
+**Rationale:** SignProto is explicitly a 1-on-1 video call tool. WebRTC peer connections are modeled as exactly two endpoints. Allowing more than 2 would require a mesh or SFU architecture — neither of which is in scope. The cap is enforced server-side so it cannot be bypassed by the client.
 
 ---
 

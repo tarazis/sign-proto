@@ -1,8 +1,8 @@
 {
-  "name": "signbridge-server",
+  "name": "signproto-server",
   "private": true,
   "version": "0.1.0",
-  "description": "Backend for SignBridge WebRTC signaling and Gemini Live caption streaming.",
+  "description": "Backend for SignProto WebRTC signaling and Gemini Live caption streaming.",
   "scripts": {
     "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
     "build": "tsc",

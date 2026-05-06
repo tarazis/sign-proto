@@ -76,7 +76,7 @@ export default function Room() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center gap-8 p-6">
-      <h1 className="text-4xl font-bold tracking-tight">SignBridge</h1>
+      <h1 className="text-4xl font-bold tracking-tight">SignProto</h1>
 
       {error ? (
         <div className="w-full max-w-3xl bg-red-900/40 border border-red-700 rounded-xl p-4 text-red-300 text-sm">

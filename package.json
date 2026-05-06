@@ -1,5 +1,5 @@
 {
-  "name": "signbridge",
+  "name": "signproto",
   "private": true,
   "version": "0.1.0",
   "description": "Real-time WebRTC video chat with AI-powered ASL sign language captioning."
